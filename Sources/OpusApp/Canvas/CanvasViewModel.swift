@@ -79,6 +79,13 @@ final class CanvasViewModel: ObservableObject {
         transform = .identity
     }
 
+    func prepareForNewCanvas() {
+        strokes.removeAll()
+        redoStack.removeAll()
+        currentStroke = nil
+        resetView()
+    }
+
     func canvasPoint(from viewPoint: CGPoint, in viewSize: CGSize) -> CGPoint {
         let scale = transform.scale
         let translatedX = (viewPoint.x - viewSize.width / 2.0) / scale - CGFloat(transform.translation.x) + viewSize.width / 2.0

@@ -96,6 +96,15 @@ final class CanvasViewModel: ObservableObject {
         }
     }
 
+    func updateCanvasSize(width: CGFloat? = nil, height: CGFloat? = nil) {
+        let newWidth = max(1, width ?? canvasSize.width)
+        let newHeight = max(1, height ?? canvasSize.height)
+        if newWidth != canvasSize.width || newHeight != canvasSize.height {
+            canvasSize = CGSize(width: newWidth, height: newHeight)
+            resetView()
+        }
+    }
+
     func prepareForNewCanvas() {
         strokes.removeAll()
         redoStack.removeAll()

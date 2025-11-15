@@ -68,23 +68,21 @@ vertex CanvasBackgroundVertexOut canvas_background_vertex(
 fragment half4 canvas_background_fragment(
     CanvasBackgroundVertexOut in [[stage_in]],
     constant CanvasUniforms& uniforms [[buffer(0)]]) {
+    float2 canvasSize = uniforms.canvasSize;
     float2 coord = in.canvasCoord;
-    float checker = fmod(floor(coord.x) + floor(coord.y), 2.0);
-    float3 lightColor = float3(0.94, 0.94, 0.96);
-    float3 darkColor = float3(0.90, 0.90, 0.94);
 
-    float pixelWidth = max(fwidth(coord.x), 1e-5);
-    float pixelHeight = max(fwidth(coord.y), 1e-5);
-    float2 local = fract(coord);
-    float lineX = 1.0 - smoothstep(0.0, pixelWidth * 0.5, min(local.x, 1.0 - local.x));
-    float lineY = 1.0 - smoothstep(0.0, pixelHeight * 0.5, min(local.y, 1.0 - local.y));
-    float gridEmphasis = clamp(max(lineX, lineY), 0.0, 1.0);
+    float distanceToEdge = min(
+        min(coord.x, canvasSize.x - coord.x),
+        min(coord.y, canvasSize.y - coord.y)
+    );
 
-    float3 baseColor = mix(lightColor, darkColor, checker);
-    baseColor = mix(baseColor, float3(0.75, 0.75, 0.78), gridEmphasis * 0.35);
+    float borderWidth = 1.0;
+    float smoothing = max(max(fwidth(coord.x), fwidth(coord.y)), 0.5);
+    float transition = smoothstep(borderWidth, borderWidth + smoothing, distanceToEdge);
 
-    bool isBorder = coord.x < 0.5 || coord.y < 0.5 || coord.x > uniforms.canvasSize.x - 0.5 || coord.y > uniforms.canvasSize.y - 0.5;
-    float3 borderColor = float3(0.20, 0.20, 0.23);
-    float3 finalColor = isBorder ? borderColor : baseColor;
-    return half4(half3(finalColor), half(1.0));
+    float3 borderColor = float3(0.80, 0.80, 0.82);
+    float3 fillColor = float3(1.0, 1.0, 1.0);
+    float3 color = mix(borderColor, fillColor, transition);
+
+    return half4(half3(color), half(1.0));
 }

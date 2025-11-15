@@ -87,21 +87,14 @@ final class MetalCanvasRenderer: NSObject, MTKViewDelegate {
             return
         }
 
-        if let background = viewModel?.backgroundColor {
-            view.clearColor = MTLClearColor(
-                red: Double(background.x),
-                green: Double(background.y),
-                blue: Double(background.z),
-                alpha: Double(background.w)
-            )
-        }
-
         guard let viewModel else {
             encoder.endEncoding()
             commandBuffer.present(drawable)
             commandBuffer.commit()
             return
         }
+
+        viewModel.fitCanvasToViewIfNeeded(viewSize: view.bounds.size)
 
         let viewSize = SIMD2<Float>(Float(view.bounds.width), Float(view.bounds.height))
         drawCanvasBackground(with: viewModel, in: encoder, viewSize: viewSize)
@@ -137,7 +130,13 @@ final class MetalCanvasRenderer: NSObject, MTKViewDelegate {
         commandBuffer.commit()
     }
 
-    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) { }
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+        guard viewModel != nil else { return }
+        DispatchQueue.main.async { [weak self, weak view] in
+            guard let self, let view = view, let viewModel = self.viewModel else { return }
+            viewModel.fitCanvasToViewIfNeeded(viewSize: view.bounds.size)
+        }
+    }
 
     private func appendSegment(from start: StrokePoint, to end: StrokePoint, baseSize: Float, color: SIMD4<Float>, transform: CanvasTransform, viewSize: SIMD2<Float>, canvasSize: SIMD2<Float>, into buffer: inout [StrokeVertex]) {
         let vector = end.position - start.position

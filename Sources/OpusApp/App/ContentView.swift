@@ -15,7 +15,7 @@ struct ContentView: View {
             MetalCanvasView()
                 .environmentObject(canvasViewModel)
                 .environmentObject(brushSettings)
-                .background(Color.white)
+                .background(Color(red: 0.13, green: 0.13, blue: 0.15))
                 .overlay(alignment: .topLeading) {
                     CanvasHUDView()
                         .padding(12)

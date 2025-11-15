@@ -4,6 +4,7 @@ struct InspectorView: View {
     @EnvironmentObject private var canvasViewModel: CanvasViewModel
     @EnvironmentObject private var brushSettings: BrushSettings
 
+    @State private var isCanvasExpanded = true
     @State private var isLayersExpanded = true
     @State private var isBrushExpanded = true
     @State private var isColorExpanded = true
@@ -12,6 +13,10 @@ struct InspectorView: View {
         VStack(alignment: .leading, spacing: 16) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
+                    InspectorSection(title: "Canvas", isExpanded: $isCanvasExpanded) {
+                        CanvasSettingsView()
+                    }
+
                     InspectorSection(title: "Layers", isExpanded: $isLayersExpanded) {
                         LayerStackView()
                     }
@@ -136,5 +141,59 @@ struct ColorWheelPlaceholder: View {
         }
         .frame(maxWidth: .infinity)
         // TODO: Replace placeholder with full HSV color wheel and harmonies.
+    }
+}
+
+private struct CanvasSettingsView: View {
+    @EnvironmentObject private var canvasViewModel: CanvasViewModel
+
+    private static let dimensionFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 0
+        formatter.minimum = 1
+        return formatter
+    }()
+
+    private var widthBinding: Binding<Double> {
+        Binding(
+            get: { Double(canvasViewModel.canvasSize.width) },
+            set: { canvasViewModel.updateCanvasSize(width: CGFloat(max(1, $0))) }
+        )
+    }
+
+    private var heightBinding: Binding<Double> {
+        Binding(
+            get: { Double(canvasViewModel.canvasSize.height) },
+            set: { canvasViewModel.updateCanvasSize(height: CGFloat(max(1, $0))) }
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            DimensionField(label: "Width", value: widthBinding)
+            DimensionField(label: "Height", value: heightBinding)
+            Button("Center Canvas") {
+                canvasViewModel.resetView()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+    }
+
+    private struct DimensionField: View {
+        let label: String
+        @Binding var value: Double
+
+        var body: some View {
+            HStack {
+                Text(label)
+                Spacer()
+                TextField(label, value: $value, formatter: CanvasSettingsView.dimensionFormatter)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 80)
+                    .labelsHidden()
+            }
+        }
     }
 }

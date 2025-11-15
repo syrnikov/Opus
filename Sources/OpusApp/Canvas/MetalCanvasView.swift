@@ -23,6 +23,7 @@ struct MetalCanvasView: NSViewRepresentable {
         context.coordinator.canvasViewModel = canvasViewModel
         context.coordinator.brushSettings = brushSettings
         nsView.toolProvider = { canvasViewModel.activeTool }
+        context.coordinator.syncRenderer()
     }
 
     final class Coordinator: NSObject, CanvasInteractionDelegate {
@@ -40,7 +41,15 @@ struct MetalCanvasView: NSViewRepresentable {
                 renderer.viewModel = canvasViewModel
                 view.renderer = renderer
                 self.renderer = renderer
+                DispatchQueue.main.async { [weak view, weak canvasViewModel] in
+                    guard let view = view, let canvasViewModel = canvasViewModel else { return }
+                    canvasViewModel.fitCanvasToViewIfNeeded(viewSize: view.bounds.size)
+                }
             }
+        }
+
+        func syncRenderer() {
+            renderer?.viewModel = canvasViewModel
         }
 
         func beginStroke(at viewPoint: CGPoint, pressure: CGFloat, in view: CanvasMTKView) {
@@ -66,7 +75,6 @@ struct MetalCanvasView: NSViewRepresentable {
         }
 
         func translate(by delta: CGSize) {
-            guard canvasViewModel.activeTool == .hand else { return }
             canvasViewModel.translate(by: delta)
         }
 
@@ -126,13 +134,14 @@ final class CanvasMTKView: MTKView {
     }
 
     override func scrollWheel(with event: NSEvent) {
-        guard toolProvider?() == .hand else {
+        let isTrackpadGesture = event.hasPreciseScrollingDeltas || event.phase != .none || event.momentumPhase != .none
+        if isTrackpadGesture || toolProvider?() == .hand {
+            let delta = CGSize(width: event.scrollingDeltaX, height: -event.scrollingDeltaY)
+            interactionDelegate?.translate(by: delta)
+            interactionDelegate?.setRendererNeedsDisplay()
+        } else {
             super.scrollWheel(with: event)
-            return
         }
-        let delta = CGSize(width: event.scrollingDeltaX, height: -event.scrollingDeltaY)
-        interactionDelegate?.translate(by: delta)
-        interactionDelegate?.setRendererNeedsDisplay()
     }
 
     override func magnify(with event: NSEvent) {

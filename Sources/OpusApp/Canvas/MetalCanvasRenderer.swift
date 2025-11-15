@@ -7,6 +7,7 @@ final class MetalCanvasRenderer: NSObject, MTKViewDelegate {
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private let pipelineState: MTLRenderPipelineState
+    private let backgroundPipelineState: MTLRenderPipelineState
 
     weak var viewModel: CanvasViewModel?
 
@@ -62,6 +63,18 @@ final class MetalCanvasRenderer: NSObject, MTKViewDelegate {
             return nil
         }
 
+        let backgroundDescriptor = MTLRenderPipelineDescriptor()
+        backgroundDescriptor.vertexFunction = library.makeFunction(name: "canvas_background_vertex")
+        backgroundDescriptor.fragmentFunction = library.makeFunction(name: "canvas_background_fragment")
+        backgroundDescriptor.colorAttachments[0].pixelFormat = metalView.colorPixelFormat
+        backgroundDescriptor.colorAttachments[0].isBlendingEnabled = false
+
+        do {
+            backgroundPipelineState = try device.makeRenderPipelineState(descriptor: backgroundDescriptor)
+        } catch {
+            return nil
+        }
+
         super.init()
         metalView.delegate = self
     }
@@ -74,17 +87,6 @@ final class MetalCanvasRenderer: NSObject, MTKViewDelegate {
             return
         }
 
-        if let background = viewModel?.backgroundColor {
-            view.clearColor = MTLClearColor(
-                red: Double(background.x),
-                green: Double(background.y),
-                blue: Double(background.z),
-                alpha: Double(background.w)
-            )
-        }
-
-        encoder.setRenderPipelineState(pipelineState)
-
         guard let viewModel else {
             encoder.endEncoding()
             commandBuffer.present(drawable)
@@ -92,7 +94,12 @@ final class MetalCanvasRenderer: NSObject, MTKViewDelegate {
             return
         }
 
+        viewModel.fitCanvasToViewIfNeeded(viewSize: view.bounds.size)
+
         let viewSize = SIMD2<Float>(Float(view.bounds.width), Float(view.bounds.height))
+        drawCanvasBackground(with: viewModel, in: encoder, viewSize: viewSize)
+        encoder.setRenderPipelineState(pipelineState)
+
         let transform = viewModel.transform
         let strokes = viewModel.snapshotStrokes()
         var vertices: [StrokeVertex] = []
@@ -101,11 +108,11 @@ final class MetalCanvasRenderer: NSObject, MTKViewDelegate {
         for stroke in strokes {
             guard let firstPoint = stroke.points.first else { continue }
             if stroke.points.count == 1 {
-                appendSegment(from: firstPoint, to: firstPoint, baseSize: stroke.baseSize, color: stroke.color, transform: transform, viewSize: viewSize, into: &vertices)
+                appendSegment(from: firstPoint, to: firstPoint, baseSize: stroke.baseSize, color: stroke.color, transform: transform, viewSize: viewSize, canvasSize: SIMD2<Float>(Float(viewModel.canvasSize.width), Float(viewModel.canvasSize.height)), into: &vertices)
             } else {
                 var previousPoint = firstPoint
                 for point in stroke.points.dropFirst() {
-                    appendSegment(from: previousPoint, to: point, baseSize: stroke.baseSize, color: stroke.color, transform: transform, viewSize: viewSize, into: &vertices)
+                    appendSegment(from: previousPoint, to: point, baseSize: stroke.baseSize, color: stroke.color, transform: transform, viewSize: viewSize, canvasSize: SIMD2<Float>(Float(viewModel.canvasSize.width), Float(viewModel.canvasSize.height)), into: &vertices)
                     previousPoint = point
                 }
             }
@@ -123,9 +130,15 @@ final class MetalCanvasRenderer: NSObject, MTKViewDelegate {
         commandBuffer.commit()
     }
 
-    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) { }
+    func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+        guard viewModel != nil else { return }
+        DispatchQueue.main.async { [weak self, weak view] in
+            guard let self, let view = view, let viewModel = self.viewModel else { return }
+            viewModel.fitCanvasToViewIfNeeded(viewSize: view.bounds.size)
+        }
+    }
 
-    private func appendSegment(from start: StrokePoint, to end: StrokePoint, baseSize: Float, color: SIMD4<Float>, transform: CanvasTransform, viewSize: SIMD2<Float>, into buffer: inout [StrokeVertex]) {
+    private func appendSegment(from start: StrokePoint, to end: StrokePoint, baseSize: Float, color: SIMD4<Float>, transform: CanvasTransform, viewSize: SIMD2<Float>, canvasSize: SIMD2<Float>, into buffer: inout [StrokeVertex]) {
         let vector = end.position - start.position
         let distance = simd_length(vector)
         let steps = max(1, Int(distance / 1.0))
@@ -133,21 +146,24 @@ final class MetalCanvasRenderer: NSObject, MTKViewDelegate {
             let t = steps == 0 ? 0 : Float(step) / Float(steps)
             let canvasPosition = start.position + vector * t
             let pressure = start.pressure + (end.pressure - start.pressure) * t
-            let viewPoint = projectToView(canvas: canvasPosition, transform: transform, viewSize: viewSize)
+            let viewPoint = projectToView(canvas: canvasPosition, transform: transform, viewSize: viewSize, canvasSize: canvasSize)
             let clipPosition = convertToClipSpace(viewPoint: viewPoint, viewSize: viewSize)
             let size = max(1.0, (baseSize * pressure) * Float(transform.scale))
             buffer.append(StrokeVertex(position: clipPosition, size: size, color: color))
         }
     }
 
-    private func projectToView(canvas: SIMD2<Float>, transform: CanvasTransform, viewSize: SIMD2<Float>) -> SIMD2<Float> {
+    private func projectToView(canvas: SIMD2<Float>, transform: CanvasTransform, viewSize: SIMD2<Float>, canvasSize: SIMD2<Float>) -> SIMD2<Float> {
         let width = viewSize.x
         let height = viewSize.y
         let translation = transform.translation
         let scale = Float(transform.scale)
-        let centered = canvas - SIMD2<Float>(width / 2.0, height / 2.0)
-        let translated = (centered + translation) * scale
-        let viewPoint = translated + SIMD2<Float>(width / 2.0, height / 2.0)
+        let viewCenter = SIMD2<Float>(width / 2.0, height / 2.0)
+        let canvasCenter = SIMD2<Float>(canvasSize.x / 2.0, canvasSize.y / 2.0)
+        let centered = canvas - canvasCenter
+        let scaled = centered * scale
+        let translated = scaled + translation
+        let viewPoint = translated + viewCenter
         return viewPoint
     }
 
@@ -156,10 +172,44 @@ final class MetalCanvasRenderer: NSObject, MTKViewDelegate {
         let normalizedY = ((viewSize.y - viewPoint.y) / viewSize.y) * 2.0 - 1.0
         return SIMD2<Float>(normalizedX, normalizedY)
     }
+
+    private func drawCanvasBackground(with viewModel: CanvasViewModel, in encoder: MTLRenderCommandEncoder, viewSize: SIMD2<Float>) {
+        let canvasSize = SIMD2<Float>(Float(viewModel.canvasSize.width), Float(viewModel.canvasSize.height))
+        var uniforms = CanvasUniforms(
+            canvasSize: canvasSize,
+            viewSize: viewSize,
+            translation: viewModel.transform.translation,
+            scale: Float(viewModel.transform.scale),
+            padding: 0
+        )
+
+        var vertices: [SIMD2<Float>] = [
+            SIMD2<Float>(0, 0),
+            SIMD2<Float>(canvasSize.x, 0),
+            SIMD2<Float>(0, canvasSize.y),
+            SIMD2<Float>(canvasSize.x, 0),
+            SIMD2<Float>(canvasSize.x, canvasSize.y),
+            SIMD2<Float>(0, canvasSize.y)
+        ]
+
+        encoder.setRenderPipelineState(backgroundPipelineState)
+        encoder.setVertexBytes(&vertices, length: MemoryLayout<SIMD2<Float>>.stride * vertices.count, index: 0)
+        encoder.setVertexBytes(&uniforms, length: MemoryLayout<CanvasUniforms>.stride, index: 1)
+        encoder.setFragmentBytes(&uniforms, length: MemoryLayout<CanvasUniforms>.stride, index: 0)
+        encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertices.count)
+    }
 }
 
 private struct StrokeVertex {
     var position: SIMD2<Float>
     var size: Float
     var color: SIMD4<Float>
+}
+
+private struct CanvasUniforms {
+    var canvasSize: SIMD2<Float>
+    var viewSize: SIMD2<Float>
+    var translation: SIMD2<Float>
+    var scale: Float
+    var padding: Float
 }

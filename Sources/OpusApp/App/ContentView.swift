@@ -46,6 +46,7 @@ struct CanvasHUDView: View {
         VStack(alignment: .leading, spacing: 4) {
             Label("Scale: \(String(format: "%.1f", Double(canvasViewModel.transform.scale * 100)))%", systemImage: "magnifyingglass")
             Label("Offset: x=\(Int(canvasViewModel.transform.translation.x)), y=\(Int(canvasViewModel.transform.translation.y))", systemImage: "arrow.up.left.and.down.right")
+            Label("Canvas: \(Int(canvasViewModel.canvasSize.width)) × \(Int(canvasViewModel.canvasSize.height)) px", systemImage: "ruler")
         }
         .font(.footnote)
         .padding(8)

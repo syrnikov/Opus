@@ -23,6 +23,7 @@ struct MetalCanvasView: NSViewRepresentable {
         context.coordinator.canvasViewModel = canvasViewModel
         context.coordinator.brushSettings = brushSettings
         nsView.toolProvider = { canvasViewModel.activeTool }
+        context.coordinator.syncRenderer()
     }
 
     final class Coordinator: NSObject, CanvasInteractionDelegate {
@@ -41,6 +42,10 @@ struct MetalCanvasView: NSViewRepresentable {
                 view.renderer = renderer
                 self.renderer = renderer
             }
+        }
+
+        func syncRenderer() {
+            renderer?.viewModel = canvasViewModel
         }
 
         func beginStroke(at viewPoint: CGPoint, pressure: CGFloat, in view: CanvasMTKView) {

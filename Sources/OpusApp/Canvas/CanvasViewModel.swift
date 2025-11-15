@@ -7,6 +7,7 @@ final class CanvasViewModel: ObservableObject {
     @Published private(set) var strokes: [Stroke] = []
     @Published private(set) var redoStack: [Stroke] = []
     @Published var transform: CanvasTransform = .identity
+    @Published var canvasSize: CGSize = CGSize(width: 2048, height: 2048)
     @Published var activeTool: Tool = .brush
     let backgroundColor = SIMD4<Float>(0.96, 0.96, 0.98, 1.0)
 
@@ -79,6 +80,15 @@ final class CanvasViewModel: ObservableObject {
         transform = .identity
     }
 
+    func updateCanvasSize(width: CGFloat? = nil, height: CGFloat? = nil) {
+        let newWidth = max(1, width ?? canvasSize.width)
+        let newHeight = max(1, height ?? canvasSize.height)
+        if newWidth != canvasSize.width || newHeight != canvasSize.height {
+            canvasSize = CGSize(width: newWidth, height: newHeight)
+            resetView()
+        }
+    }
+
     func prepareForNewCanvas() {
         strokes.removeAll()
         redoStack.removeAll()
@@ -88,9 +98,12 @@ final class CanvasViewModel: ObservableObject {
 
     func canvasPoint(from viewPoint: CGPoint, in viewSize: CGSize) -> CGPoint {
         let scale = transform.scale
-        let translatedX = (viewPoint.x - viewSize.width / 2.0) / scale - CGFloat(transform.translation.x) + viewSize.width / 2.0
-        let translatedY = (viewPoint.y - viewSize.height / 2.0) / scale - CGFloat(transform.translation.y) + viewSize.height / 2.0
-        return CGPoint(x: translatedX, y: translatedY)
+        let viewCenter = CGPoint(x: viewSize.width / 2.0, y: viewSize.height / 2.0)
+        let canvasCenter = CGPoint(x: canvasSize.width / 2.0, y: canvasSize.height / 2.0)
+
+        let offsetX = (viewPoint.x - viewCenter.x - CGFloat(transform.translation.x)) / scale
+        let offsetY = (viewPoint.y - viewCenter.y - CGFloat(transform.translation.y)) / scale
+        return CGPoint(x: offsetX + canvasCenter.x, y: offsetY + canvasCenter.y)
     }
 }
 
